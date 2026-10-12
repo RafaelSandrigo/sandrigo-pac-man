@@ -49,8 +49,8 @@ body {
   padding: 0 16px;
 }
 
-/* ---------- Tela de Game Over ---------- */
-#overlay {
+/* ---------- Menu (ESC) e tela de Game Over ---------- */
+.overlay {
   position: absolute;
   inset: 0;
   display: flex;
@@ -60,7 +60,7 @@ body {
   line-height: 1.4;
 }
 
-#overlay.hidden {
+.overlay.hidden {
   display: none;
 }
 
@@ -80,6 +80,10 @@ body {
   font-size: clamp(14px, 4vw, 20px);
   font-weight: normal;
   color: #ff0000;
+}
+
+.panel h1.menu-title {
+  color: #ffff00;
 }
 
 .score-line {
@@ -102,7 +106,8 @@ button {
 }
 
 button:hover:not(:disabled),
-button:focus-visible {
+button:focus,
+button.selected {
   background: #ffff00;
   color: #000;
   outline: none;
@@ -114,7 +119,7 @@ button:focus-visible {
 }
 
 #againBtn:hover,
-#againBtn:focus-visible {
+#againBtn:focus {
   background: #00ffff;
   color: #000;
 }
@@ -134,4 +139,24 @@ button:disabled {
 .hint {
   font-size: 8px;
   color: #777;
+}
+
+/* Botão de menu para telas de toque, onde não existe ESC */
+.menu-btn {
+  display: none;
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  padding: 6px 8px;
+  font-size: 10px;
+  line-height: 1;
+  color: #dedeff;
+  border-color: #dedeff;
+  opacity: 0.8;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  .menu-btn:not([hidden]) {
+    display: block;
+  }
 }

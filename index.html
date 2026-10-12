@@ -12,8 +12,19 @@
 <body>
   <div id="wrap">
     <canvas id="game" aria-label="Pac-Man"></canvas>
+    <button id="menuBtn" class="menu-btn" type="button" aria-label="Open menu" hidden>II</button>
 
-    <div id="overlay" class="hidden">
+    <div id="menu" class="overlay hidden" role="dialog" aria-label="Game menu">
+      <div class="panel">
+        <h1 class="menu-title">PAUSED</h1>
+        <button id="resumeBtn" type="button">RESUME</button>
+        <button id="restartBtn" type="button">RESTART</button>
+        <button id="homeBtn" type="button">HOME</button>
+        <p class="hint">ESC = RESUME</p>
+      </div>
+    </div>
+
+    <div id="overlay" class="overlay hidden">
       <div class="panel">
         <h1>GAME OVER</h1>
         <p class="score-line">SCORE <span id="finalScore">0</span></p>
@@ -25,7 +36,7 @@
     </div>
   </div>
 
-  <p id="help">ARROWS / WASD / SWIPE: MOVE &middot; P: PAUSE &middot; M: SOUND</p>
+  <p id="help">ARROWS / WASD / SWIPE: MOVE &middot; ESC: MENU &middot; P: PAUSE &middot; M: SOUND</p>
 
   <script src="script.js"></script>
 </body>

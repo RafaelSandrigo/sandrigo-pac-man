@@ -1269,7 +1269,7 @@ function reportGameOver(score) {
       text('READY!', W / 2, 17 * TS, '#ffff00', 'center');
     }
     if (state === 'gameover') text('GAME  OVER', W / 2, 17 * TS, '#ff0000', 'center');
-    if (paused) {
+    if (paused && !menuVisible()) {
       ctx.fillStyle = '#000000';
       ctx.fillRect(9 * TS, 17 * TS - 2, 10 * TS, TS + 4);
       text('PAUSED', W / 2, 17 * TS, '#ffff00', 'center');
@@ -1337,6 +1337,7 @@ function reportGameOver(score) {
       acc -= STEP;
     }
     render();
+    if (menuBtn.hidden === inGame()) menuBtn.hidden = !inGame();
     requestAnimationFrame(loop);
   }
 
@@ -1396,6 +1397,58 @@ function reportGameOver(score) {
     paused = !paused;
   }
 
+  // ---------- Menu (ESC) ----------
+  const menu = document.getElementById('menu');
+  const menuBtn = document.getElementById('menuBtn');
+  const menuButtons = [...menu.querySelectorAll('button')];
+  const menuVisible = () => !menu.classList.contains('hidden');
+  let menuIndex = 0;
+
+  // Opção destacada por classe, para funcionar mesmo sem foco na página (ex.: iframe)
+  function selectMenu(i) {
+    menuIndex = (i + menuButtons.length) % menuButtons.length;
+    menuButtons.forEach((b, j) => b.classList.toggle('selected', j === menuIndex));
+    menuButtons[menuIndex].focus();
+  }
+
+  function openMenu() {
+    if (!inGame() || menuVisible()) return;
+    paused = true;
+    menu.classList.remove('hidden');
+    selectMenu(0);
+  }
+
+  function closeMenu() {
+    menu.classList.add('hidden');
+    if (menu.contains(document.activeElement)) document.activeElement.blur();
+  }
+
+  function resumeGame() {
+    closeMenu();
+    paused = false;
+  }
+
+  function restartGame() {
+    closeMenu();
+    Sound.init();
+    startGame();
+  }
+
+  function goHome() {
+    closeMenu();
+    hideOverlay();
+    paused = false;
+    attract.chase = null;
+    setState('attract');
+  }
+
+
+  document.getElementById('resumeBtn').addEventListener('click', resumeGame);
+  document.getElementById('restartBtn').addEventListener('click', restartGame);
+  document.getElementById('homeBtn').addEventListener('click', goHome);
+  menuButtons.forEach((b, i) => b.addEventListener('mouseenter', () => selectMenu(i)));
+  menuBtn.addEventListener('click', openMenu);
+
   window.addEventListener('keydown', e => {
     const isStart = e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space';
     if (e.code in KEYMAP || e.code === 'Space') e.preventDefault();
@@ -1404,6 +1457,22 @@ function reportGameOver(score) {
       Sound.init();
       muteState = Sound.toggleMute();
       muteToast = 90;
+      return;
+    }
+    if (menuVisible()) {
+      if (e.code === 'Escape') {
+        e.preventDefault();
+        resumeGame();
+      } else if (e.code === 'ArrowUp' || e.code === 'KeyW') {
+        e.preventDefault();
+        selectMenu(menuIndex - 1);
+      } else if (e.code === 'ArrowDown' || e.code === 'KeyS') {
+        e.preventDefault();
+        selectMenu(menuIndex + 1);
+      } else if (isStart) {
+        e.preventDefault();
+        menuButtons[menuIndex].click();
+      }
       return;
     }
     if (state === 'attract') {
@@ -1421,7 +1490,11 @@ function reportGameOver(score) {
       }
       return;
     }
-    if (e.code === 'KeyP' || e.code === 'Escape') {
+    if (e.code === 'Escape') {
+      openMenu();
+      return;
+    }
+    if (e.code === 'KeyP') {
       togglePause();
       return;
     }
@@ -1457,16 +1530,16 @@ function reportGameOver(score) {
       if (state === 'attract') {
         e.preventDefault();
         startFromAttract();
-      } else if (paused) {
+      } else if (paused && !menuVisible()) {
         togglePause();
       }
     }
     touch = null;
   });
 
-  // Pausa automática ao perder o foco
+  // Abre o menu automaticamente ao perder o foco
   const autoPause = () => {
-    if (inGame()) paused = true;
+    if (inGame()) openMenu();
   };
   window.addEventListener('blur', autoPause);
   document.addEventListener('visibilitychange', () => {
