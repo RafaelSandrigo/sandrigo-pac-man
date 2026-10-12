@@ -21,7 +21,6 @@ function reportGameOver(score) {
   const COLS = 28, ROWS = 31;   // labirinto
   const MAZE_Y = 3 * TS;        // 3 linhas de HUD acima do labirinto
   const W = 224, H = 288;       // resolução original do arcade
-  const SCALE = 3;              // resolução interna do canvas
   const STEP = 1000 / 60;       // lógica a 60 fps fixos
   const BASE = 75.75757625 / 60; // 100% de velocidade em px/frame
 
@@ -115,9 +114,25 @@ function reportGameOver(score) {
 
   // ---------- Canvas ----------
   const canvas = document.getElementById('game');
-  canvas.width = W * SCALE;
-  canvas.height = H * SCALE;
+  canvas.width = W;
+  canvas.height = H;
   const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+
+  // Desenha na resolução nativa (224x288) e amplia por um fator inteiro de pixels
+  // do dispositivo, para todos os pixels terem o mesmo tamanho. Em telas pequenas
+  // demais para 2x, usa o maior tamanho que couber.
+  function fitCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    const availW = Math.max(1, window.innerWidth - 32);
+    const availH = Math.max(1, window.innerHeight - 40);
+    const fit = Math.min(availW / W, availH / H) * dpr;
+    const scale = fit >= 2 ? Math.floor(fit) : fit;
+    canvas.style.width = `${(W * scale) / dpr}px`;
+    canvas.style.height = `${(H * scale) / dpr}px`;
+  }
+  fitCanvas();
+  window.addEventListener('resize', fitCanvas);
 
   // ---------- Som (sintetizado com Web Audio) ----------
   const Sound = (() => {
@@ -311,57 +326,100 @@ function reportGameOver(score) {
     return { init, intro, waka, eatGhost, fruit, extraLife, death, siren, tick, toggleMute };
   })();
 
-  // ---------- Pré-renderização das paredes ----------
-  function buildMazeCanvas(color) {
-    const cv = document.createElement('canvas');
-    cv.width = W * SCALE;
-    cv.height = ROWS * TS * SCALE;
-    const g = cv.getContext('2d');
-    g.scale(SCALE, SCALE);
-    g.strokeStyle = color;
-    g.lineWidth = 1.25;
-    g.lineCap = 'round';
-    g.lineJoin = 'round';
+  // ---------- Paredes pixel a pixel (como os tiles 8x8 do arcade) ----------
+  // Cada vizinho de um tile de parede é W (parede), E (corredor) ou V (vazio:
+  // fora do labirinto, caixas laterais dos túneis e interior da casa). Linhas
+  // voltadas para E ficam junto ao centro do tile; voltadas para V, na beirada,
+  // o que forma as linhas duplas da borda e da casa.
+  const isHouse = (c, r) => r >= 12 && r <= 16 && c >= 10 && c <= 17;
 
-    const wall = (c, r) => {
-      if (c < 0 || c >= COLS || r < 0 || r >= ROWS) return true;
-      const ch = MAZE[r][c];
-      return ch === '#' || ch === '-';
-    };
+  function cellType(c, r) {
+    if (r < 0 || r >= ROWS) return 'V';
+    if (c < 0 || c >= COLS) return r === 14 ? 'E' : r === 13 || r === 15 ? 'W' : 'V';
+    const ch = MAZE[r][c];
+    if (ch === '#' || ch === '-') return 'W';
+    if (ch !== ' ') return 'E';
+    if (r >= 13 && r <= 15 && c >= 11 && c <= 16) return 'V';
+    if (r >= 9 && r <= 19 && r !== 14 && (c <= 4 || c >= 23)) return 'V';
+    return 'E';
+  }
 
-    g.beginPath();
+  // Formatos dos cantos no quadrante (+1,+1); os outros quadrantes são espelhados
+  const CONVEX_SMALL = [[6, 4], [7, 4], [5, 5], [4, 6], [4, 7]];
+  const CONVEX_BIG = [[4, 0], [5, 0], [6, 0], [7, 0], [2, 1], [3, 1], [1, 2], [1, 3],
+    [0, 4], [0, 5], [0, 6], [0, 7]];
+  const CONCAVE = [[5, 3], [6, 3], [7, 3], [4, 4], [3, 5], [3, 6], [3, 7]];
+
+  function buildWallBitmap() {
+    const bmp = new Uint8Array(W * ROWS * TS);
     for (let r = 0; r < ROWS; r++) {
       for (let c = 0; c < COLS; c++) {
         if (MAZE[r][c] !== '#') continue;
-        const cx = c * TS + 4, cy = r * TS + 4;
-        const corner = (dx, dy) => {
-          g.moveTo(cx + 4 * dx, cy);
-          g.quadraticCurveTo(cx, cy, cx, cy + 4 * dy);
+        const set = (x, y) => { bmp[(r * TS + y) * W + c * TS + x] = 1; };
+        const shape = (pts, dx, dy) => {
+          for (const [x, y] of pts) set(dx > 0 ? x : 7 - x, dy > 0 ? y : 7 - y);
         };
-        const U = wall(c, r - 1), D = wall(c, r + 1), L = wall(c - 1, r), R = wall(c + 1, r);
+        const t = (dx, dy) => cellType(c + dx, r + dy);
+        // posição da linha voltada para um vizinho (sinal s = -1 antes, +1 depois)
+        const pos = (type, s) => (type === 'V' ? (s < 0 ? 0 : 7) : (s < 0 ? 4 : 3));
+        const house = isHouse(c, r);
+        const concave = (dx, dy) => {
+          const d = t(dx, dy);
+          if (d === 'E') shape(CONCAVE, dx, dy);
+          else if (d === 'V' && house) set(dx > 0 ? 7 : 0, dy > 0 ? 7 : 0);
+        };
 
-        // Canto convexo: exatamente duas paredes vizinhas, uma horizontal e uma vertical
+        const U = t(0, -1) === 'W', D = t(0, 1) === 'W', L = t(-1, 0) === 'W', R = t(1, 0) === 'W';
         if (U + D + L + R === 2 && U !== D) {
-          corner(R ? 1 : -1, D ? 1 : -1);
-          continue;
-        }
-        for (const dx of [-1, 1]) {
-          for (const dy of [-1, 1]) {
-            const h = wall(c + dx, r), v = wall(c, r + dy), d = wall(c + dx, r + dy);
-            if (h && v) {
-              if (!d) corner(dx, dy); // canto côncavo
-            } else if (h) {
-              g.moveTo(cx, cy);
-              g.lineTo(cx + 4 * dx, cy);
-            } else if (v) {
-              g.moveTo(cx, cy);
-              g.lineTo(cx, cy + 4 * dy);
+          // canto convexo
+          const dx = R ? 1 : -1, dy = D ? 1 : -1;
+          if (house) {
+            const row = pos(t(0, -dy), -dy), col = pos(t(-dx, 0), -dx);
+            for (let i = 0; i < 8; i++) {
+              if ((i - col) * dx >= 0) set(i, row);
+              if ((i - row) * dy >= 0) set(col, i);
+            }
+          } else if (t(0, -dy) === 'V' && t(-dx, 0) === 'V') {
+            shape(CONVEX_BIG, dx, dy);
+          } else {
+            shape(CONVEX_SMALL, dx, dy);
+          }
+          if (t(dx, dy) !== 'W') concave(dx, dy);
+        } else {
+          for (const dx of [-1, 1]) {
+            for (const dy of [-1, 1]) {
+              const h = t(dx, 0) === 'W', v = t(0, dy) === 'W';
+              if (h && v) {
+                if (t(dx, dy) !== 'W') concave(dx, dy);
+              } else if (h) {
+                const y = pos(t(0, dy), dy);
+                for (let x = 0; x < 4; x++) set(dx < 0 ? x : 4 + x, y);
+              } else if (v) {
+                const x = pos(t(dx, 0), dx);
+                for (let y = 0; y < 4; y++) set(x, dy < 0 ? y : 4 + y);
+              }
             }
           }
         }
+        // remates das paredes ao lado da porta
+        if (MAZE[r][c + 1] === '-') { set(7, 5); set(7, 6); }
+        if (MAZE[r][c - 1] === '-') { set(0, 5); set(0, 6); }
       }
     }
-    g.stroke();
+    return bmp;
+  }
+
+  const wallBitmap = buildWallBitmap();
+
+  function buildMazeCanvas(color) {
+    const cv = document.createElement('canvas');
+    cv.width = W;
+    cv.height = ROWS * TS;
+    const g = cv.getContext('2d');
+    g.fillStyle = color;
+    for (let i = 0; i < wallBitmap.length; i++) {
+      if (wallBitmap[i]) g.fillRect(i % W, Math.floor(i / W), 1, 1);
+    }
     return cv;
   }
 
@@ -1175,7 +1233,7 @@ function reportGameOver(score) {
     ctx.drawImage(white ? mazeWhite : mazeBlue, 0, 0, W, ROWS * TS);
     if (!flashPhase) {
       ctx.fillStyle = '#ffb8ff';
-      ctx.fillRect(13 * TS, 12 * TS + 3, 16, 2);
+      ctx.fillRect(13 * TS, 12 * TS + 5, 16, 2);
     }
     drawDots();
 
@@ -1262,7 +1320,7 @@ function reportGameOver(score) {
   }
 
   function render() {
-    ctx.setTransform(SCALE, 0, 0, SCALE, 0, 0);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = '#000000';
     ctx.fillRect(0, 0, W, H);
     if (state === 'attract') renderAttract();
