@@ -87,7 +87,7 @@ window.addEventListener("message", (event) => {
 ```
 index.html   Page markup: canvas, pause menu and game over screen
 style.css    Layout, scaling and menu styles
-script.js    Game logic, rendering, sound and input
+game.js      Game logic, rendering, sound and input
 ```
 
 ## Technical notes
