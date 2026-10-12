@@ -164,6 +164,10 @@ function reportGameOver(score) {
       return 440 * Math.pow(2, (midi - 69) / 12);
     }
 
+    // Vozes ainda tocando ou agendadas (música de abertura, morte...), para
+    // poderem ser canceladas ao reiniciar ou voltar para a home
+    const active = new Set();
+
     // Cria uma voz e devolve o AudioParam de frequência para automação
     function voice(type, t0, dur, vol) {
       const o = ac.createOscillator();
@@ -176,7 +180,27 @@ function reportGameOver(score) {
       o.connect(g).connect(master);
       o.start(t0);
       o.stop(t0 + dur + 0.05);
+      const v = { o, g };
+      active.add(v);
+      o.onended = () => {
+        active.delete(v);
+        g.disconnect();
+      };
       return o.frequency;
+    }
+
+    function stopAll() {
+      for (const { o, g } of active) {
+        o.onended = null;
+        try {
+          o.stop();
+        } catch (e) {
+          // já parada
+        }
+        g.disconnect();
+      }
+      active.clear();
+      wakaUntil = 0;
     }
 
     const U = 0.135; // duração de uma semicolcheia da música de abertura
@@ -323,7 +347,7 @@ function reportGameOver(score) {
       return muted;
     }
 
-    return { init, intro, waka, eatGhost, fruit, extraLife, death, siren, tick, toggleMute };
+    return { init, intro, stopAll, waka, eatGhost, fruit, extraLife, death, siren, tick, toggleMute };
   })();
 
   // ---------- Paredes pixel a pixel (como os tiles 8x8 do arcade) ----------
@@ -506,6 +530,7 @@ function reportGameOver(score) {
     extraLifeGiven = false;
     startLevel();
     firstReady = true;
+    Sound.stopAll();
     introFrames = Math.round(Sound.intro() * 60);
     setState('ready');
   }
@@ -1439,6 +1464,7 @@ function reportGameOver(score) {
     hideOverlay();
     paused = false;
     attract.chase = null;
+    Sound.stopAll();
     setState('attract');
   }
 
